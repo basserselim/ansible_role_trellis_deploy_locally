@@ -21,26 +21,42 @@
     chdir: "{{ project_source_path }}"
   when: git_project.stat.exists and remote_origin_url.stdout != project_git_repo
 
-- include: "update_localy.yml"
+- set_fact:
+    random_tmp_directory: "{{ 'temp' | to_uuid }}"
 
-#- name: Clone project files
-#  git:
-#    repo: "{{ project_git_repo }}"
-#    dest: "{{ project_source_path }}"
-#    version: "{{ project_version }}"
-#    accept_hostkey: yes
-#  ignore_errors: true
-#  no_log: true
-#  register: git_clone
+- name: make temp dir
+  file:
+    path=/tmp/{{ random_tmp_directory }} state=directory mode=0755
 
-#- name: Failed connection to remote repo
-#  fail:
-#    msg: |
-#      Git repo {{ project.repo }} cannot be accessed. Please verify the repository exists and you have SSH forwarding set up correctly.
-#      More info:
-#      > https://roots.io/trellis/docs/deploys/#ssh-keys
-#      > https://roots.io/trellis/docs/ssh-keys/#cloning-remote-repo-using-ssh-agent-forwarding
-#  when: git_clone | failed
+- name: Clone project files
+  local_action:
+    git
+      repo="{{ project_git_repo }}"
+      dest="/tmp/{{ random_tmp_directory }}"
+      version="{{ project_version }}"
+      accept_hostkey=yes
+  ignore_errors: true
+  no_log: true
+  register: git_clone
+
+- name: Failed connection to remote repo
+  fail:
+    msg: |
+      Git repo {{ project_git_repo }} cannot be accessed. Please verify the repository exists and you have SSH forwarding set up correctly.
+      More info:
+      > https://roots.io/trellis/docs/deploys/#ssh-keys
+      > https://roots.io/trellis/docs/ssh-keys/#cloning-remote-repo-using-ssh-agent-forwarding
+  when: git_clone | failed
+
+- name: make release dir
+  file:
+    path=/tmp/releasetemp state=directory mode=0755
+
+- name: Copy Source to Server
+  synchronize: src=/tmp/{{ random_tmp_directory }}/ dest="{{ project_source_path }}" recursive=yes delete=yes
+
+- name: delete random tmp directory
+  file: path=/tmp/{{ random_tmp_directory }} state=absent
 
 - include: "{{ deploy_update_after | default('../hooks/example.yml') }}"
   tags: deploy-update-after
